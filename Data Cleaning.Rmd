@@ -1,0 +1,558 @@
+---
+title: "Data Cleaning"
+output: html_document
+date: "2023-12-12"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(sf)
+library(rnaturalearth)
+library(plotly)
+library(shiny)
+library(shinydashboard)
+library(cowplot)
+```
+
+
+## Import Dataset
+
+```{r import}
+
+est_cases = read.csv("Est Mal cases by country.csv", sep = ",",header=TRUE, skip = 1)
+conf_cases = read.csv("MALARIA_CONFIRMED_CASES.csv", sep = ",", header = TRUE, skip = 1)
+pres_cases = read.csv("MALARIA_PRESUMED_CASES.csv", sep = ",", header = TRUE, skip = 1)
+tot_cases = read.csv("MALARIA_TOTAL_CASES_Presumed_confirmed.csv",sep = ",", header = TRUE, skip = 1)
+est_incd = read.csv("MALARIA_EST_INCIDENCE_per1000.csv", sep = ",", header = TRUE, skip = 1)
+imported_cases = read.csv("MALARIA_IMPORTED.csv", sep = ",", header = TRUE, skip = 1)
+ing_cases = read.csv("MALARIA_INDIG.csv", sep = ",", header = TRUE)
+
+#Death
+est_death = read.csv("MALARIA_EST_DEATHS.csv", sep = ",", header = TRUE, skip = 1)
+est_mort = read.csv("MALARIA_EST_MORTALITY.csv", sep = ",", header = TRUE, skip = 1)
+
+world_countries_by_region = read.csv("world_countries_by_region.csv", sep = ",", header = TRUE)
+
+```
+
+
+## Clean Data
+
+1. Estimated Cases 
+
+```{r est}
+#Convert name of headers
+colnames(est_cases) <- c("Country", sub("^X", "", colnames(est_cases)[-1]))
+
+
+est_cases_long <- est_cases %>%
+  pivot_longer(
+    cols = -Country,  
+    names_to = "Year",  
+    values_to = "Cases" 
+  )
+
+est_cases_long <- est_cases_long %>%
+  separate(
+    col = Cases,  # Column to split
+    into = c("Est_Cases", "Range"),  # New columns to create
+    sep = "\\s+(?=\\[)",  # Regular expression to split by space before '['
+    remove = FALSE,  # Remove the original column if you don't need it anymore
+    convert = FALSE  # Set to FALSE to keep everything as character strings for now
+  )
+
+
+est_cases_long <- est_cases_long %>%
+  mutate(
+    Est_Cases = as.numeric(gsub("[^0-9.]", "", Est_Cases)),  # Clean and convert to numeric
+    Range = gsub("\\[|\\]", "", Range),  # Remove brackets
+    Year = as.numeric(Year)  # Convert Year to numeric
+  )
+#str(est_cases_long)
+head(est_cases_long)
+
+
+#Summary Statistics
+summary_stats <- est_cases_long %>%
+  group_by(Country) %>%
+  summarise(
+    Average_Cases = mean(Est_Cases, na.rm = TRUE),
+    Total_Cases = sum(Est_Cases, na.rm = TRUE),
+    Min_Cases = min(Est_Cases, na.rm = TRUE),
+    Max_Cases = max(Est_Cases, na.rm = TRUE)
+  )
+summary_stats
+
+
+```
+
+
+## Match countries
+
+
+```{r}
+
+country_name_corrections <- c(
+  "Bolivia (Plurinational State of)" = "Bolivia",
+  "Cote d'Ivoire" = "Côte d'Ivoire",
+  "Cabo Verde" = "Cape Verde",
+  "Democratic People's Republic of Korea" = "Dem. Rep. Korea",
+  "Democratic Republic of the Congo" = "Dem. Rep. Congo",
+  "Equatorial Guinea" = "Eq. Guinea", # Check if map data uses a different name
+  "Eswatini" = "Swaziland",
+  "Iran (Islamic Republic of)" = "Iran",
+  "Lao People's Democratic Republic" = "Lao PDR",
+  "Republic of Korea" = "Korea",
+  "Sao Tome and Principe" = "São Tomé and Principe", # Check the exact spelling in the map data
+  "Solomon Islands" = "Solomon Is.", # Check if map data uses a different name
+  "South Sudan" = "S. Sudan", # Check if map data uses a different name
+  "Syrian Arab Republic" = "Syria",
+  "Turkiye" = "Turkey",
+  "United Republic of Tanzania" = "Tanzania",
+  "Venezuela (Bolivarian Republic of)" = "Venezuela",
+  "Viet Nam" = "Vietnam",
+  "Central African Republic" = "Central African Rep.",
+  "Dominican Republic" = "Dominican Rep.")
+
+est_cases_long$Country <- ifelse(est_cases_long$Country %in% names(country_name_corrections),       country_name_corrections[est_cases_long$Country],
+                                 est_cases_long$Country)
+
+```
+
+## 2. Confirmed Cases
+
+```{r}
+colnames(conf_cases) = c("Country", sub("^.", "", colnames(conf_cases)[-1]))
+conf_cases <- conf_cases %>%
+  mutate(across(-Country, ~ as.numeric(gsub("[ ,]", "", .))))
+#head(conf_cases)
+
+conf_cases_long <- conf_cases %>%
+  pivot_longer(
+    cols = -Country,  # Select all columns except for Country to pivot
+    names_to = "Year",  # This will create the new 'Year' header
+    values_to = "Cases"  # This will contain the values for each year
+  ) %>%
+  mutate(Year = as.numeric(Year))  # Convert Year to numeric
+
+head(conf_cases_long)
+```
+
+
+
+3. Presumed Cases
+
+```{r}
+colnames(pres_cases) = c("Country", sub("^X.", "", colnames(pres_cases)[-1]))
+pres_cases <- pres_cases %>%
+  mutate(across(-Country, ~ as.numeric(gsub("[ ,]", "", .))))
+#head(pres_cases)
+
+pres_cases_long <- pres_cases %>%
+  pivot_longer(
+    cols = -Country,  # Select all columns except for Country to pivot
+    names_to = "Year",  # This will create the new 'Year' header
+    values_to = "Cases"  # This will contain the values for each year
+  ) %>%
+  mutate(Year = as.numeric(Year))  # Convert Year to numeric
+
+head(pres_cases_long)
+```
+
+
+4. Total Cased: Presumed + Confirmed
+
+```{r}
+head(tot_cases)
+colnames(tot_cases) = c("Country", sub("^X.", "", colnames(tot_cases)[-1]))
+tot_cases <- tot_cases %>%
+  mutate(across(-Country, ~ as.numeric(gsub("[ ,]", "", .))))
+#head(tot_cases)
+
+tot_cases_long <- tot_cases %>%
+  pivot_longer(
+    cols = -Country,  # Select all columns except for Country to pivot
+    names_to = "Year",  # This will create the new 'Year' header
+    values_to = "Cases"  # This will contain the values for each year
+  ) %>%
+  mutate(Year = as.numeric(Year))  # Convert Year to numeric
+
+head(tot_cases_long)
+
+```
+
+5. Estimated Incidence per 1000
+
+```{r}
+#Convert name of headers
+head(est_incd)
+colnames(est_incd) <- c("Country", sub("^X.", "", colnames(est_incd)[-1]))
+
+
+est_incd_long <- est_incd %>%
+  pivot_longer(
+    cols = -Country,  
+    names_to = "Year",  
+    values_to = "Cases" 
+  )
+
+est_incd_long <- est_incd_long %>%
+  separate(
+    col = Cases,  # Column to split
+    into = c("Est_Incd", "Range"),  # New columns to create
+    sep = "\\s+(?=\\[)",  # Regular expression to split by space before '['
+    remove = FALSE,  # Remove the original column if you don't need it anymore
+    convert = FALSE  # Set to FALSE to keep everything as character strings for now
+  )
+
+
+est_incd_long <- est_incd_long %>%
+  mutate(
+    Est_Incd = as.numeric(gsub("[^0-9.]", "", Est_Incd)),  # Clean and convert to numeric
+    Range = gsub("\\[|\\]", "", Range),  # Remove brackets
+    Year = as.numeric(Year)  # Convert Year to numeric
+  )
+#str(est_cases_long)
+head(est_incd_long)
+```
+
+
+6. Imported Cases
+
+```{r}
+colnames(imported_cases) = c("Country", sub("^X.", "", colnames(imported_cases)[-1]))
+imported_cases <- imported_cases %>%
+  mutate(across(-Country, ~ as.numeric(gsub("[ ,]", "", .))))
+#head(conf_cases)
+
+imported_cases_long <- imported_cases %>%
+  pivot_longer(
+    cols = -Country,  # Select all columns except for Country to pivot
+    names_to = "Year",  # This will create the new 'Year' header
+    values_to = "Cases"  # This will contain the values for each year
+  ) %>%
+  mutate(Year = as.numeric(Year))  # Convert Year to numeric
+
+head(imported_cases_long)
+```
+
+
+7. Indigeneous Cases
+
+```{r}
+colnames(ing_cases) = c("Country", sub("^X.", "", colnames(ing_cases)[-1]))
+ing_cases<- ing_cases %>%
+  mutate(across(-Country, ~ as.numeric(gsub("[ ,]", "", .))))
+#head(conf_cases)
+
+ing_cases_long <- ing_cases %>%
+  pivot_longer(
+    cols = -Country,  # Select all columns except for Country to pivot
+    names_to = "Year",  # This will create the new 'Year' header
+    values_to = "Cases"  # This will contain the values for each year
+  ) %>%
+  mutate(Year = as.numeric(Year))  # Convert Year to numeric
+
+head(ing_cases_long)
+```
+
+
+8. Estimated Death
+```{r}
+#Convert name of headers
+head(est_death)
+colnames(est_death) <- c("Country", sub("^X.", "", colnames(est_death)[-1]))
+
+
+est_death_long <-est_death %>%
+  pivot_longer(
+    cols = -Country,  
+    names_to = "Year",  
+    values_to = "Cases" 
+  )
+
+est_death_long <- est_death_long %>%
+  separate(
+    col = Cases,  # Column to split
+    into = c("Est_Death", "Range"),  # New columns to create
+    sep = "\\s+(?=\\[)",  # Regular expression to split by space before '['
+    remove = FALSE,  # Remove the original column if you don't need it anymore
+    convert = FALSE  # Set to FALSE to keep everything as character strings for now
+  )
+
+
+est_death_long <- est_death_long %>%
+  mutate(
+    Est_Death = as.numeric(gsub("[^0-9.]", "", Est_Death)),  # Clean and convert to numeric
+    Range = gsub("\\[|\\]", "", Range),  # Remove brackets
+    Year = as.numeric(Year)  # Convert Year to numeric
+  )
+#str(est_cases_long)
+head(est_death_long)
+```
+
+
+9. Estimated Mortality Rates
+```{r}
+#Convert name of headers
+#head(est_mort)
+colnames(est_mort) <- c("Country", sub("^X.", "", colnames(est_mort)[-1]))
+
+
+est_mort_long <-est_mort %>%
+  pivot_longer(
+    cols = -Country,  
+    names_to = "Year",  
+    values_to = "Cases" 
+  )
+
+est_mort_long <- est_mort_long %>%
+  separate(
+    col = Cases,  # Column to split
+    into = c("Est_Mort", "Range"),  # New columns to create
+    sep = "\\s+(?=\\[)",  # Regular expression to split by space before '['
+    remove = FALSE,  # Remove the original column if you don't need it anymore
+    convert = FALSE  # Set to FALSE to keep everything as character strings for now
+  )
+
+
+est_mort_long <- est_mort_long %>%
+  mutate(
+   Est_Mort = as.numeric(gsub("[^0-9.]", "", Est_Mort)),  # Clean and convert to numeric
+    Range = gsub("\\[|\\]", "", Range),  # Remove brackets
+    Year = as.numeric(Year)  # Convert Year to numeric
+  )
+#str(est_cases_long)
+head(est_mort_long)
+
+```
+
+Save clean dataset to a new CSV file
+
+```{r}
+# Create a named list of dataframes
+#dataframes <- list(
+#   est_cases_long = est_cases_long,
+#   conf_cases_long = conf_cases_long,
+#   pres_cases_long = pres_cases_long,
+#   tot_cases_long = tot_cases_long,
+#   est_incd_long = est_incd_long,
+#   imported_cases_long = imported_cases_long,
+#   ing_cases_long = ing_cases_long,
+#   est_death_long = est_death_long,
+#   est_mort_long = est_mort_long
+# )
+
+# Iterate over the list and write each dataframe to a CSV file
+#lapply(names(dataframes), function(name) {
+  #write.csv(dataframes[[name]], paste0(name, ".csv"), row.names = FALSE)
+#})
+
+```
+
+
+## Global Cases
+ 
+## Global Cases
+
+```{r}
+global_est_cases = read.csv("MALARIA_EST_CASES_Global.csv", sep = ",",header=TRUE, skip = 1)
+global_conf_cases = read.csv("MALARIA_CONF_CASES_Global.csv", sep = ",", header = TRUE, skip = 1)
+global_pres_cases = read.csv("MALARIA_PRES_CASES_Global.csv", sep = ",", header = TRUE, skip = 1)
+global_tot_cases = read.csv("MALARIA_TOTAL_CASES_Global.csv",sep = ",", header = TRUE, skip = 1)
+global_est_incd = read.csv("MALARIA_EST_INCIDENCE_Global.csv", sep = ",", header = TRUE, skip = 1)
+global_imported_cases = read.csv("MALARIA_IMPORTED_Global.csv", sep = ",", header = TRUE, skip = 1)
+global_ing_cases = read.csv("MALARIA_INDIG_Global.csv", sep = ",", header = TRUE)
+
+
+#Death
+global_est_death = read.csv("MALARIA_EST_DEATHS_Global.csv", sep = ",", header = TRUE, skip = 1)
+global_est_mort = read.csv("MALARIA_EST_MORTALITY_Global.csv", sep = ",", header = TRUE, skip = 1)
+
+
+
+
+
+```
+
+
+## Global Data Cleaning
+
+1. Global Estimated Cases
+```{r}
+#Convert name of headers
+colnames(global_est_cases) <- c("Region", sub("^X.", "", colnames(global_est_cases)[-1]))
+
+
+global_est_cases_long <- global_est_cases %>%
+  pivot_longer(
+    cols = -Region,  
+    names_to = "Year",  
+    values_to = "Cases" 
+  )
+
+global_est_cases_long <- global_est_cases_long %>%
+  separate(
+    col = Cases,  # Column to split
+    into = c("Global_Est_Cases", "Range"),  # New columns to create
+    sep = "\\s+(?=\\[)",  # Regular expression to split by space before '['
+    remove = FALSE,  # Remove the original column if you don't need it anymore
+    convert = FALSE  # Set to FALSE to keep everything as character strings for now
+  )
+
+
+global_est_cases_long <- global_est_cases_long %>%
+  mutate(
+    Global_Est_Cases = as.numeric(gsub("[^0-9.]", "", Global_Est_Cases)),  # Clean and convert to numeric
+    Range = gsub("\\[|\\]", "", Range),  # Remove brackets
+    Year = as.numeric(Year)  # Convert Year to numeric
+  )
+#str(est_cases_long)
+head(global_est_cases_long)
+
+
+#Summary Statistics
+summary_stats <- global_est_cases_long %>%
+  group_by(Region) %>%
+  summarise(
+    Average_Cases = mean(Global_Est_Cases, na.rm = TRUE),
+    Total_Cases = sum(Global_Est_Cases, na.rm = TRUE),
+    Min_Cases = min(Global_Est_Cases, na.rm = TRUE),
+    Max_Cases = max(Global_Est_Cases, na.rm = TRUE)
+  )
+summary_stats
+```
+
+2. Global Confirmed Cases
+
+```{r}
+colnames(global_conf_cases) = c("Region", sub("^X.", "", colnames(global_conf_cases)[-1]))
+global_conf_cases <- global_conf_cases %>%
+  mutate(across(-Region, ~ as.numeric(gsub("[ ,]", "", .))))
+#head(conf_cases)
+
+global_conf_cases_long <- global_conf_cases %>%
+  pivot_longer(
+    cols = -Region,  # Select all columns except for Country to pivot
+    names_to = "Year",  # This will create the new 'Year' header
+    values_to = "Cases"  # This will contain the values for each year
+  ) %>%
+  mutate(Year = as.numeric(Year))  # Convert Year to numeric
+
+head(global_conf_cases_long)
+```
+
+
+
+3. Global Death
+
+```{r}
+#Convert name of headers
+head(global_est_death)
+colnames(global_est_death) <- c("Region", sub("^X.", "", colnames(global_est_death)[-1]))
+
+
+global_est_death_long <-global_est_death %>%
+  pivot_longer(
+    cols = -Region,  
+    names_to = "Year",  
+    values_to = "Cases" 
+  )
+
+global_est_death_long <- global_est_death_long %>%
+  separate(
+    col = Cases,  # Column to split
+    into = c("Global_Est_Death", "Range"),  # New columns to create
+    sep = "\\s+(?=\\[)",  # Regular expression to split by space before '['
+    remove = FALSE,  # Remove the original column if you don't need it anymore
+    convert = FALSE  # Set to FALSE to keep everything as character strings for now
+  )
+
+
+global_est_death_long <- global_est_death_long %>%
+  mutate(
+    Global_Est_Death = as.numeric(gsub("[^0-9.]", "", Global_Est_Death)),  # Clean and convert to numeric
+    Range = gsub("\\[|\\]", "", Range),  # Remove brackets
+    Year = as.numeric(Year)  # Convert Year to numeric
+  )
+#str(global_est_cases_long)
+head(global_est_death_long)
+```
+
+
+4. Global Mortality
+
+```{r}
+#Convert name of headers
+#head(est_mort)
+colnames(global_est_mort) <- c("Region", sub("^X.", "", colnames(global_est_mort)[-1]))
+
+
+global_est_mort_long <-global_est_mort %>%
+  pivot_longer(
+    cols = -Region,  
+    names_to = "Year",  
+    values_to = "Global_Cases" 
+  )
+
+global_est_mort_long <- global_est_mort_long %>%
+  separate(
+    col = Global_Cases,  # Column to split
+    into = c("Global_Est_Mort", "Range"),  # New columns to create
+    sep = "\\s+(?=\\[)",  # Regular expression to split by space before '['
+    remove = FALSE,  # Remove the original column if you don't need it anymore
+    convert = FALSE  # Set to FALSE to keep everything as character strings for now
+  )
+
+
+global_est_mort_long <- global_est_mort_long %>%
+  mutate(
+   Global_Est_Mort = as.numeric(gsub("[^0-9.]", "", Global_Est_Mort)),  # Clean and convert to numeric
+    Range = gsub("\\[|\\]", "", Range),  # Remove brackets
+    Year = as.numeric(Year)  # Convert Year to numeric
+  )
+#str(est_cases_long)
+head(global_est_mort_long)
+
+
+# dataframes <- list(
+#    global_est_cases_long = global_est_cases_long,
+#    global_conf_cases_long = global_conf_cases_long,
+#    global_est_death_long = global_est_death_long,
+#    global_est_mort_long = global_est_mort_long
+# )
+# 
+# # Iterate over the list and write each dataframe to a CSV file
+# lapply(names(dataframes), function(name) {
+# write.csv(dataframes[[name]], paste0(name, ".csv"), row.names = FALSE)
+# })
+```
+
+
+
+
+Bubble Plot for Estimated Deaths
+
+```{r}
+# plot <- est_death_long %>%
+#   left_join(est_mort_long, by = c("Country", "Year")) %>%
+#   plot_ly(
+#     x = ~Year, 
+#     y = ~Est_Death, 
+#     text = ~Country, 
+#     size = ~Est_Mort, 
+#     sizes = c(20, 60), 
+#     color = ~Country,
+#     colors = "RdYlBu"
+#   ) %>%
+#   add_markers() %>%
+#   layout(title = 'Estimated Malaria Deaths and Mortality Rates by Year and Country',
+#          xaxis = list(title = 'Year'),
+#          yaxis = list(title = 'Estimated Deaths'))
+# 
+# # To view the plot, simply run this line in your R environment
+# plot
+```

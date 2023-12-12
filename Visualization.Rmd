@@ -1,0 +1,870 @@
+---
+title: "Cleaning and Visualization"
+output: html_document
+date: "2023-12-12"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(sf)
+library(rnaturalearth)
+library(plotly)
+library(shiny)
+library(shinydashboard)
+library(cowplot)
+library(treemap)
+library(readr)
+library(stringr)
+library(forecast)
+library(caTools)
+library(caret)
+```
+
+## Import Data
+
+```{r import}
+world_countries_by_region = read.csv("world_countries_by_region.csv", sep = ",", header = TRUE)
+est_cases_long = read.csv("est_cases_long.csv", sep = ",", header = TRUE)
+conf_cases_long = read.csv("conf_cases_long.csv", sep = ",", header = TRUE)
+pres_cases_long = read.csv("pres_cases_long.csv", sep = ",", header = TRUE)
+tot_cases_long = read.csv("tot_cases_long.csv", sep = ",", header = TRUE)
+est_incd_long = read.csv("est_incd_long.csv", sep = ",", header = TRUE)
+imported_cases_long = read.csv("imported_cases_long.csv", sep = ",", header = TRUE)
+ing_cases_long = read.csv("ing_cases_long.csv", sep = ",", header = TRUE)
+
+
+est_death_long = read.csv("est_death_long.csv", sep = ",", header = TRUE)
+est_mort_long = read.csv("est_mort_long.csv", sep = ",", header = TRUE)
+
+
+global_est_cases_long = read.csv("global_est_cases_long.csv", sep = ",", header = TRUE)
+global_conf_cases_long = read.csv("global_conf_cases_long.csv", sep = ",", header = TRUE)
+global_est_death_long = read.csv("global_est_death_long.csv", sep = ",", header = TRUE)
+global_est_mort_long = read.csv("global_est_mort_long.csv", sep = ",", header = TRUE)
+```
+
+
+
+
+## Merge Data
+
+```{r merge}
+merged_death = read.csv("merged_death.csv", sep = ",", header = TRUE)
+merged_mort = read.csv("merged_mort.csv", sep = ",", header = TRUE)
+#$Est_Mort <- as.numeric(merged_mort$Est_Mort)
+merged_est = read.csv("merged_est.csv", sep = ",", header = TRUE)
+merged_tot = read.csv("merged_tot.csv", sep = ",", header = TRUE)
+merged_imp = read.csv("merged_imp.csv", sep = ",", header = TRUE)
+merged_ing = read.csv("merged_ing.csv", sep = ",", header = TRUE)
+merged_incd = read.csv("merged_incd.csv", sep = ",", header = TRUE)
+
+merged_deathh <- select(merged_death, -Cases, -Range)
+merged_incdd <- select(merged_incd, -Cases, -Range)
+merged_estt <- select(merged_est, -Cases, -Range)
+
+
+merged_data <- merge(merged_deathh, merged_incdd, by=c("Year","Country","Region"))
+merged_data <- merge(merged_data, merged_estt,  by=c("Year","Country","Region"))
+attach(merged_data)
+
+merged_use = select(merged_data, -Country, - Region)
+
+```
+
+
+## Adjusting data country names based on R country names
+
+```{r}
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
+country_name_corrections <- c(
+  "Bolivia (Plurinational State of)" = "Bolivia",
+  "Cote d'Ivoire" = "Côte d'Ivoire",
+  "Cabo Verde" = "Cape Verde",
+  "Democratic People's Republic of Korea" = "Dem. Rep. Korea",
+  "Democratic Republic of the Congo" = "Dem. Rep. Congo",
+  "Equatorial Guinea" = "Eq. Guinea", # Check if map data uses a different name
+  "Eswatini" = "Swaziland",
+  "Iran (Islamic Republic of)" = "Iran",
+  "Lao People's Democratic Republic" = "Lao PDR",
+  "Republic of Korea" = "Korea",
+  "Sao Tome and Principe" = "São Tomé and Principe", # Check the exact spelling in the map data
+  "Solomon Islands" = "Solomon Is.", # Check if map data uses a different name
+  "South Sudan" = "S. Sudan", # Check if map data uses a different name
+  "Syrian Arab Republic" = "Syria",
+  "Turkiye" = "Turkey",
+  "United Republic of Tanzania" = "Tanzania",
+  "Venezuela (Bolivarian Republic of)" = "Venezuela",
+  "Viet Nam" = "Vietnam",
+  "Central African Republic" = "Central African Rep.",
+  "Dominican Republic" = "Dominican Rep.")
+
+
+est_cases_long$Country <- ifelse(est_cases_long$Country %in% names(country_name_corrections),       country_name_corrections[est_cases_long$Country],
+                                 est_cases_long$Country)
+
+
+
+
+mismatched_countries <- setdiff(est_cases_long$Country, world$name)
+#Two countries were mismatched (this means the world package does not have these countries named correctly)
+#"French Guiana" "Mayotte"
+
+mismatched_countries
+
+```
+
+
+## Malaria trend world wide visualization for the year 2000
+
+```{r trend_2000}
+#year 2000 
+data_2000 <- est_cases_long %>%
+  filter(Year == 2000) %>%
+  select(Country, Est_Cases)
+
+# Merge the map data with the 2000 cases data
+world_data_2000 <- world %>%
+  left_join(data_2000, by = c("name" = "Country"))
+
+# Plot the map
+ggplot(data = world_data_2000) +
+  geom_sf(aes(fill = Est_Cases), color = "white", size = 0.1) +
+  scale_fill_viridis_c(option = "plasma", na.value = "grey", 
+                       labels = scales::comma, guide = guide_legend(title = "Estimated\nCases")) +
+  labs(title = "Estimated Malaria Cases in 2000", 
+       fill = "Cases") +
+  theme_void() +
+  theme(legend.position = "bottom")
+```
+
+
+
+## Malaria trend world wide visualization for the year 2010
+
+
+```{r trend_2010}
+#year 2010 
+data_2010 <- est_cases_long %>%
+  filter(Year == 2010) %>%
+  select(Country, Est_Cases)
+
+# Merge the map data with the 2010 cases data
+world_data_2010 <- world %>%
+  left_join(data_2010, by = c("name" = "Country"))
+
+# Plot the map
+ggplot(data = world_data_2010) +
+  geom_sf(aes(fill = Est_Cases), color = "white", size = 0.1) +
+  scale_fill_viridis_c(option = "plasma", na.value = "grey", 
+                       labels = scales::comma, guide = guide_legend(title = "Estimated\nCases")) +
+  labs(title = "Estimated Malaria Cases in 2010", 
+       fill = "Cases") +
+  theme_void() +
+  theme(legend.position = "bottom")
+```
+
+
+
+## Malaria trend world wide visualization for the year 2021
+
+```{r trend_2021}
+#year 2021 
+data_2021 <- est_cases_long %>%
+  filter(Year == 2021) %>%
+  select(Country, Est_Cases)
+
+# Merge the map data with the 2021 cases data
+world_data_2021 <- world %>%
+  left_join(data_2021, by = c("name" = "Country"))
+
+# Plot the map
+ggplot(data = world_data_2021) +
+  geom_sf(aes(fill = Est_Cases), color = "white", size = 0.1) +
+  scale_fill_viridis_c(option = "plasma", na.value = "grey", 
+                       labels = scales::comma, guide = guide_legend(title = "Estimated\nCases")) +
+  labs(title = "Estimated Malaria Cases in 2021", 
+       fill = "Cases") +
+  theme_void() +
+  theme(legend.position = "bottom")
+```
+
+
+## Total Confirmed Malaria Cases Over the Years
+
+```{r confirmed}
+annual_confirmed <- conf_cases_long %>%
+  group_by(Year) %>%
+  summarise(Total_Confirmed = sum(Cases, na.rm = TRUE))
+
+# Create a time series plot
+ggplot(annual_confirmed, aes(x = Year, y = Total_Confirmed)) +
+  geom_line(color = "blue", size = 1) +
+  theme_classic() +
+  labs(title = "Total Confirmed Malaria Cases Over the Years",
+       x = "Year",
+       y = "Total Confirmed Cases")
+```
+
+
+## Aggregate death estimates for each year
+
+```{r death}
+ # Aggregate death estimates for each year
+annual_deaths <- est_death_long %>%
+  group_by(Year) %>%
+  summarise(Total_Deaths = sum(Est_Death, na.rm = TRUE))
+
+# Create a time series plot
+ggplot(annual_deaths, aes(x = Year, y = Total_Deaths)) +
+  geom_line(color = "blue", size = 1) +
+  theme_classic() +
+  labs(title = "Total Estimated Malaria Deaths Over the Years",
+       x = "Year",
+       y = "Total Estimated Deaths")
+```
+
+
+
+
+## Treemap of death cases
+
+```{r}
+# Sum the death estimates for each country
+total_deaths_by_country <- est_death_long %>%
+  group_by(Country) %>%
+  summarise(Total_Deaths = sum(Est_Death, na.rm = TRUE)) %>%
+  ungroup()
+
+#Create a treemap
+plot_ly(
+  data = total_deaths_by_country,
+  labels = ~Country,
+  parents = NA,
+  values = ~Total_Deaths,
+  type = "treemap",
+  textinfo = 'label+value',
+  hoverinfo = 'label+value+percent parent'
+) %>%
+  layout(title = "Distribution of Total Estimated Deaths by Country")
+```
+
+
+## Bubble Plots
+
+```{r bubble}
+
+latest_year <- max(merged_death$Year)
+merged_death_latest <- subset(merged_death, Year == latest_year)
+merged_mort_latest <- subset(merged_mort, Year == latest_year)
+
+
+# Merging the death and mortality data
+merged_data <- merge(merged_death_latest, merged_mort_latest, by=c('Country', 'Year', 'Region'))
+
+
+```
+
+## Average death 
+
+```{r avg}
+# Sorting data to show highest death rates at the top
+# Aggregating data by region (sum, mean, or median can be used based on requirement)
+na_counts_per_column <- colSums(is.na(merged_death))
+#print(na_counts_per_column)
+
+region_data <- merged_death %>%
+  group_by(Region) %>%
+  summarise(Avg_Mortality = mean(Est_Death, na.rm = TRUE)) %>%
+  arrange(desc(Avg_Mortality))
+
+# Creating the bar chart for regions
+ggplot(region_data, aes(x = Region, y = Avg_Mortality, fill = Region)) +
+  geom_bar(stat = "identity") +
+  theme_classic() +
+  labs(title = "Average Malaria Death Rates by Region",
+       x = "Region",
+       y = "Average Death Rate") +
+  coord_flip() +
+  scale_fill_brewer(palette = "Set1") +
+  theme(legend.position = "none")
+```
+
+##  
+
+```{r mort_death}
+# Creating a ggplot
+ggplot(merged_data, aes(x=Est_Death, y=Est_Mort, size=Est_Death, color=Region, text=Country)) +
+    geom_point(alpha=0.7) +
+    scale_size(range=c(1, 10)) +
+    labs(title='Malaria Estimates by Country and Region',
+         x='Estimated Deaths in Latest Year',
+         y='Average Estimated Mortality Rate',
+         color='Region') +
+    theme_classic() +
+    theme(legend.position='right')
+
+
+
+
+
+# p <- ggplot(merged_data, aes(x=Est_Death, y=Est_Mort, size=Est_Death, color=Region)) +
+#     geom_point(alpha=0.7) +
+#     geom_text(aes(label=Country), check_overlap = TRUE, vjust = "inward", hjust = "inward") +
+#     scale_size(range=c(1, 10)) +
+#     labs(title='Malaria Estimates by Country and Region (Interactive)',
+#          x='Estimated Deaths in Latest Year',
+#          y='Average Estimated Mortality Rate',
+#          color='Region') +
+#     theme_minimal() +
+#     theme(legend.position='right')
+# 
+# # Converting to an interactive plotly plot
+# ggplotly(p, tooltip = "text")
+
+
+ggplot(merged_data, aes(x=Est_Death, y=Est_Mort, size=Est_Death, color=Region, text=Country)) +
+    geom_point(alpha=0.7) +
+    scale_size(range=c(1, 10)) +
+    labs(title='Malaria Estimates by Country and Region',
+         x='Estimated Deaths in Latest Year',
+         y='Average Estimated Mortality Rate',
+         color='Region') +
+    theme_classic() +
+    theme(legend.position='right')
+```
+
+## Death vs Mort for Americas
+
+```{r america}
+
+# year 2000
+latest_2000 <- 2000
+merged_death_2000 <- subset(merged_death, Year == latest_2000)
+merged_mort_2000 <- subset(merged_mort, Year == latest_2000)
+merged_incd_2000 <- subset(merged_incd, Year == latest_2000)
+
+
+merged_death_americas <- subset(merged_death_2000, Region == 'Americas')
+merged_mort_americas <- subset(merged_mort_2000, Region == 'Americas')
+merged_incd_americas <- subset(merged_incd_2000, Region == 'Americas')
+
+# Merging the death and mortality data for the Americas
+merged_data_americas <- merge(merged_death_americas, merged_mort_americas, by=c('Country', 'Year', 'Region'))
+
+# Creating a ggplot for the Americas region
+p_americas <- ggplot(merged_data_americas, aes(x=Est_Death, y=Est_Mort, size=Est_Death, color=Region, text=Country)) +
+    geom_point(alpha=0.7) +
+    geom_text(aes(label=Country, color = "black"), check_overlap = TRUE, size = 1) +
+    scale_size(range=c(1, 10)) +
+  scale_color_manual(values=c("Africa" = "red", "Americas" = "skyblue", "Europe" = "red", "South-East Asia" = "orange", "Eastern Mediterranean" = "green", "Western Pacific" = "yellow")) +
+    labs(title='Death Estimates vs Malaria Mortality in the Americas in 2000',
+         x='Estimated Deaths in 2000',
+         y='Average Estimated Mortality Rate',
+         color='Region') +
+    theme_minimal() +
+    theme(legend.position='right')
+
+# Converting to an interactive plotly plot
+ggplotly(p_americas, tooltip = "text")
+
+
+
+
+
+## 2021
+latest_2021 <- 2021
+merged_death_2021 <- subset(merged_death, Year == latest_2021)
+merged_mort_2021 <- subset(merged_mort, Year == latest_2021)
+merged_incd_2021 <- subset(merged_incd, Year == latest_2021)
+
+
+merged_death_americas <- subset(merged_death_2021, Region == 'Americas')
+merged_mort_americas <- subset(merged_mort_2021, Region == 'Americas')
+merged_incd_americas <- subset(merged_incd_2021, Region == 'Americas')
+
+# Merging the death and mortality data for the Americas
+merged_data_americas <- merge(merged_death_americas, merged_mort_americas, by=c('Country', 'Year', 'Region'))
+
+# Creating a ggplot for the Americas region
+p_americas <- ggplot(merged_data_americas, aes(x=Est_Death, y=Est_Mort, size=Est_Death, color=Region)) +
+    geom_point(alpha=0.7) +
+    geom_text(aes(label=Country, color = "black"), check_overlap = TRUE, size = 1) +
+    scale_size(range=c(1, 10)) +
+    scale_color_manual(values=c("Africa" = "red", "Americas" = "skyblue", "Europe" = "red", "South-East Asia" = "orange", "Eastern Mediterranean" = "green", "Western Pacific" = "yellow")) +
+    labs(title='Death Estimates vs Malaria Mortality in the Americas in 2021',
+         x='Estimated Deaths in 2021',
+         y='Average Estimated Mortality Rate',
+         color='Region') +
+    theme_classic() +
+    theme(legend.position='right')
+
+# Converting to an interactive plotly plot
+ggplotly(p_americas, tooltip = "text")
+
+```
+
+
+
+
+
+## Death vs Mort for Africans
+
+```{r}
+
+# year 2000
+latest_2000 <- 2000
+merged_death_2000 <- subset(merged_death, Year == latest_2000)
+merged_mort_2000 <- subset(merged_mort, Year == latest_2000)
+merged_incd_2000 <- subset(merged_incd, Year == latest_2000)
+
+# Filtering data for the "Africa" region
+merged_death_africa <- subset(merged_death_2000, Region == 'Africa')
+merged_mort_africa <- subset(merged_mort_2000, Region == 'Africa')
+merged_incd_africa <- subset(merged_incd_2000, Region == 'Africa')
+
+# Merging the death and mortality data for the "Africa" region
+merged_data_africa <- merge(merged_death_africa, merged_mort_africa, by=c('Country', 'Year', 'Region'))
+
+p_africa <- ggplot(merged_data_africa, aes(x=Est_Death, y=Est_Mort, size=Est_Death, color=Region, text=Country)) +
+    geom_point(alpha=0.7) +
+    geom_text(aes(label=Country, color = "black"), check_overlap = TRUE, size = 1.5) +
+    scale_size(range=c(1, 10)) +
+    scale_color_manual(values=c("Africa" = "red", "Americas" = "skyblue", "Europe" = "red", "South-East Asia"= "orange", "Eastern Mediterranean" = "green", "Western Pacific" = "yellow")) +
+    labs(title='Death Estimates vs Malaria Mortality in Africa in 2000',
+         x='Estimated Deaths in Latest Year',
+         y='Average Estimated Mortality Rate',
+         color='Region') +
+    theme_minimal() +
+    theme(legend.position='right')
+
+# Converting to an interactive plotly plot
+ggplotly(p_africa, tooltip = "text")
+
+
+
+
+
+
+## year 2021
+latest_2021 <- 2021
+merged_death_2021 <- subset(merged_death, Year == latest_2021)
+merged_mort_2021 <- subset(merged_mort, Year == latest_2021)
+merged_incd_2021 <- subset(merged_incd, Year == latest_2021)
+
+# Filtering data for the "Africa" region
+merged_death_africa <- subset(merged_death_2021, Region == 'Africa')
+merged_mort_africa <- subset(merged_mort_2021, Region == 'Africa')
+merged_incd_africa <- subset(merged_incd_2021, Region == 'Africa')
+
+# Merging the death and mortality data for the "Africa" region
+merged_data_africa <- merge(merged_death_africa, merged_mort_africa, by=c('Country', 'Year', 'Region'))
+
+# Creating a ggplot for the Americas region
+p_africa <- ggplot(merged_data_africa, aes(x=Est_Death, y=Est_Mort, size=Est_Death, color=Region)) +
+    geom_point(alpha=0.7) +
+    geom_text(aes(label=Country, color = "black"), check_overlap = TRUE, size = 1.5) +
+    scale_size(range=c(1, 10)) +
+    scale_color_manual(values=c("Africa" = "red", "Americas" = "skyblue", "Europe" = "red", "South-East Asia" = "orange", "Eastern Mediterranean" = "green", "Western Pacific" = "yellow")) +
+    labs(title='Death Estimates vs Malaria Mortality in Africa in 2021',
+         x='Estimated Deaths in 2021',
+         y='Average Estimated Mortality Rate',
+         color='Region') +
+    theme_classic() +
+    theme(legend.position='right')
+
+#Converting to an interactive plotly plot
+ggplotly(p_africa, tooltip = "text")
+
+
+
+```
+
+
+
+## Death vs mort for South East Asia
+
+```{r}
+
+# year 2000
+latest_2000 <- 2000
+merged_death_2000 <- subset(merged_death, Year == latest_2000)
+merged_mort_2000 <- subset(merged_mort, Year == latest_2000)
+merged_incd_2000 <- subset(merged_incd, Year == latest_2000)
+
+
+merged_death_asia <- subset(merged_death_2000, Region == 'South-East Asia')
+merged_mort_asia <- subset(merged_mort_2000, Region == 'South-East Asia')
+merged_incd_asia <- subset(merged_incd_2000, Region == 'South-East Asia')
+
+# Merging the death and mortality data for the Asia
+merged_data_asia <- merge(merged_death_asia, merged_mort_asia, by=c('Country', 'Year', 'Region'))
+
+# Creating a ggplot for the Americas region
+p_asia <- ggplot(merged_data_asia, aes(x=Est_Death, y=Est_Mort, size=Est_Death, color=Region, text=Country)) +
+    geom_point(alpha=0.7) +
+    geom_text(aes(label=Country, color = "black"), check_overlap = TRUE, size = 2) +
+    scale_size(range=c(1, 10)) +
+  scale_color_manual(values=c("Africa" = "red", "Americas" = "skyblue", "Europe" = "red", "South-East Asia" = "orange", "Eastern Mediterranean" = "green", "Western Pacific" = "yellow")) +
+    labs(title='Death Estimates vs Malaria Mortality in South-East Asia in 2000',
+         x='Estimated Deaths in 2000',
+         y='Average Estimated Mortality Rate',
+         color='Region') +
+    theme_minimal() +
+    theme(legend.position='right') 
+
+# Converting to an interactive plotly plot
+ggplotly(p_asia, tooltip = "text")
+
+
+
+
+
+## 2021
+latest_2021 <- 2021
+merged_death_2021 <- subset(merged_death, Year == latest_2021)
+merged_mort_2021 <- subset(merged_mort, Year == latest_2021)
+merged_incd_2021 <- subset(merged_incd, Year == latest_2021)
+
+
+merged_death_asia <- subset(merged_death_2021, Region == 'South-East Asia')
+merged_mort_asia <- subset(merged_mort_2021, Region == 'South-East Asia')
+merged_incd_asia <- subset(merged_incd_2021, Region == 'South-East Asia')
+
+# Merging the death and mortality data for the Americas
+merged_data_asia <- merge(merged_death_asia, merged_mort_asia, by=c('Country', 'Year', 'Region'))
+
+# Creating a ggplot for the Asia region
+p_asia <- ggplot(merged_data_asia, aes(x=Est_Death, y=Est_Mort, size=Est_Death, color=Region)) +
+    geom_point(alpha=0.7) +
+    geom_text(aes(label=Country, color = "black"), check_overlap = TRUE, size = 2) +
+    scale_size(range=c(1, 10)) +
+    scale_color_manual(values=c("Africa" = "red", "Americas" = "skyblue", "Europe" = "red", "South-East Asia" = "orange", "Eastern Mediterranean" = "green", "Western Pacific" = "yellow")) +
+    labs(title='Death Estimates vs Malaria Mortality in South-East Asia in 2021',
+         x='Estimated Deaths in 2021',
+         y='Average Estimated Mortality Rate',
+         color='Region') +
+    theme_minimal() +
+    theme(legend.position='right')
+
+# Converting to an interactive plotly plot
+ggplotly(p_asia, tooltip = "text")
+
+```
+
+
+
+
+## Death vs mort for Eastern Mediterranean
+
+```{r}
+# year 2000
+latest_2000 <- 2000
+merged_death_2000 <- subset(merged_death, Year == latest_2000)
+merged_mort_2000 <- subset(merged_mort, Year == latest_2000)
+merged_incd_2000 <- subset(merged_incd, Year == latest_2000)
+
+
+merged_death_em <- subset(merged_death_2000, Region == 'Eastern Mediterranean')
+merged_mort_em <- subset(merged_mort_2000, Region == 'Eastern Mediterranean')
+merged_incd_em <- subset(merged_incd_2000, Region == 'Eastern Mediterranean')
+
+# Merging the death and mortality data for the E-Ms
+merged_data_em <- merge(merged_death_em, merged_mort_em, by=c('Country', 'Year', 'Region'))
+
+# Creating a ggplot for the E-Ms region
+p_em <- ggplot(merged_data_em, aes(x=Est_Death, y=Est_Mort, size=Est_Death, color=Region, text=Country)) +
+    geom_point(alpha=0.7) +
+    geom_text(aes(label=Country, color = "black"), check_overlap = TRUE, size = 2) +
+    scale_size(range=c(1, 10)) +
+  scale_color_manual(values=c("Africa" = "red", "Americas" = "skyblue", "Europe" = "red", "South-East Asia" = "orange", "Eastern Mediterranean" = "green", "Western Pacific" = "yellow")) +
+    labs(title='Death Estimates vs Malaria Mortality in Eastern Mediterranean in 2000',
+         x='Estimated Deaths in 2000',
+         y='Average Estimated Mortality Rate',
+         color='Region') +
+    theme_minimal() +
+    theme(legend.position='right') 
+
+# Converting to an interactive plotly plot
+ggplotly(p_em, tooltip = "text")
+
+
+
+
+
+## 2021
+latest_2021 <- 2021
+merged_death_2021 <- subset(merged_death, Year == latest_2021)
+merged_mort_2021 <- subset(merged_mort, Year == latest_2021)
+merged_incd_2021 <- subset(merged_incd, Year == latest_2021)
+
+
+merged_death_em <- subset(merged_death_2021, Region == 'Eastern Mediterranean')
+merged_mort_em <- subset(merged_mort_2021, Region == 'Eastern Mediterranean')
+merged_incd_em <- subset(merged_incd_2021, Region == 'Eastern Mediterranean')
+
+# Merging the death and mortality data for the Americas
+merged_data_em <- merge(merged_death_em, merged_mort_em, by=c('Country', 'Year', 'Region'))
+
+# Creating a ggplot for the Americas region
+p_em <- ggplot(merged_data_em, aes(x=Est_Death, y=Est_Mort, size=Est_Death, color=Region)) +
+    geom_point(alpha=0.7) +
+    geom_text(aes(label=Country, color = "black"), check_overlap = TRUE, size = 2) +
+    scale_size(range=c(1, 10)) +
+    scale_color_manual(values=c("Africa" = "red", "Americas" = "skyblue", "Europe" = "red", "South-East Asia" = "orange", "Eastern Mediterranean" = "green", "Western Pacific" = "yellow")) +
+    labs(title='Death Estimates vs Malaria Mortality in Eastern Mediterranean in 2021',
+         x='Estimated Deaths in 2021',
+         y='Average Estimated Mortality Rate',
+         color='Region') +
+    theme_minimal() +
+    theme(legend.position='right')
+
+# Converting to an interactive plotly plot
+ggplotly(p_em, tooltip = "text")
+
+
+```
+
+
+## Death vs mort for Western Pacific
+```{r}
+# year 2000
+latest_2000 <- 2000
+merged_death_2000 <- subset(merged_death, Year == latest_2000)
+merged_mort_2000 <- subset(merged_mort, Year == latest_2000)
+merged_incd_2000 <- subset(merged_incd, Year == latest_2000)
+
+
+merged_death_wp <- subset(merged_death_2000, Region == 'Western Pacific')
+merged_mort_wp <- subset(merged_mort_2000, Region == 'Western Pacific')
+merged_incd_wp <- subset(merged_incd_2000, Region == 'Western Pacific')
+
+# Merging the death and mortality data for the WPs
+merged_data_wp <- merge(merged_death_wp, merged_mort_wp, by=c('Country', 'Year', 'Region'))
+
+# Creating a ggplot for the WP region
+p_wp <- ggplot(merged_data_wp, aes(x=Est_Death, y=Est_Mort, size=Est_Death, color=Region, text=Country)) +
+    geom_point(alpha=0.7) +
+    geom_text(aes(label=Country, color = "black"), check_overlap = TRUE, size = 1) +
+    scale_size(range=c(1, 10)) +
+  scale_color_manual(values=c("Africa" = "red", "Americas" = "skyblue", "Europe" = "red", "South-East Asia" = "orange", "Eastern Mediterranean" = "green", "Western Pacific" = "yellow")) +
+    labs(title='Death Estimates vs Malaria Mortality in Western Pacific in 2000',
+         x='Estimated Deaths in 2000',
+         y='Average Estimated Mortality Rate',
+         color='Region') +
+    theme_minimal() +
+    theme(legend.position='right') 
+
+# Converting to an interactive plotly plot
+ggplotly(p_wp, tooltip = "text")
+
+
+
+
+
+## 2021
+latest_2021 <- 2021
+merged_death_2021 <- subset(merged_death, Year == latest_2021)
+merged_mort_2021 <- subset(merged_mort, Year == latest_2021)
+merged_incd_2021 <- subset(merged_incd, Year == latest_2021)
+
+
+merged_death_wp <- subset(merged_death_2021, Region == 'Western Pacific')
+merged_mort_wp <- subset(merged_mort_2021, Region == 'Western Pacific')
+merged_incd_wp <- subset(merged_incd_2021, Region == 'Western Pacific')
+
+# Merging the death and mortality data for the Americas
+merged_data_wp <- merge(merged_death_wp, merged_mort_wp, by=c('Country', 'Year', 'Region'))
+
+# Creating a ggplot for the WP region
+p_wp <- ggplot(merged_data_wp, aes(x=Est_Death, y=Est_Mort, size=Est_Death, color=Region)) +
+    geom_point(alpha=0.7) +
+    geom_text(aes(label=Country, color = "black"), check_overlap = TRUE, size = 1) +
+    scale_size(range=c(1, 10)) +
+    scale_color_manual(values=c("Africa" = "red", "Americas" = "skyblue", "Europe" = "red", "South-East Asia" = "orange", "Eastern Mediterranean" = "green", "Western Pacific" = "yellow")) +
+    labs(title='Death Estimates vs Malaria Mortality in Western Pacific in 2021',
+         x='Estimated Deaths in 2021',
+         y='Average Estimated Mortality Rate',
+         color='Region') +
+    theme_minimal() +
+    theme(legend.position='right')
+
+# Converting to an interactive plotly plot
+ggplotly(p_wp, tooltip = "text")
+```
+
+
+## Death vs mort for Europe
+
+```{r}
+# year 2000
+latest_2000 <- 2000
+merged_death_2000 <- subset(merged_death, Year == latest_2000)
+merged_mort_2000 <- subset(merged_mort, Year == latest_2000)
+merged_incd_2000 <- subset(merged_incd, Year == latest_2000)
+
+
+merged_death_europe <- subset(merged_death_2000, Region == 'Europe')
+merged_mort_europe <- subset(merged_mort_2000, Region == 'Europe')
+merged_incd_europe <- subset(merged_incd_2000, Region == 'Europe')
+
+# Merging the death and mortality data for the WPs
+merged_data_europe <- merge(merged_death_europe, merged_mort_europe, by=c('Country', 'Year', 'Region'))
+
+# Creating a ggplot for the WP region
+p_europe <- ggplot(merged_data_europe, aes(x=Est_Death, y=Est_Mort, size=Est_Death, color=Region, text=Country)) +
+    geom_point(alpha=0.7) +
+    geom_text(aes(label=Country, color = "black"), check_overlap = TRUE, size = 1) +
+    scale_size(range=c(1, 10)) +
+  scale_color_manual(values=c("Africa" = "red", "Americas" = "skyblue", "Europe" = "purple", "South-East Asia" = "orange", "Eastern Mediterranean" = "green", "Western Pacific" = "yellow")) +
+    labs(title='Europe Estimates (2000)',
+         x='Estimated Deaths in 2000',
+         y='Average Estimated Mortality Rate',
+         color='Region') +
+    theme_classic() +
+    theme(legend.position='right') 
+
+# Converting to an interactive plotly plot
+ggplotly(p_europe, tooltip = "text")
+
+
+
+
+
+## 2021
+latest_2021 <- 2021
+merged_death_2021 <- subset(merged_death, Year == latest_2021)
+merged_mort_2021 <- subset(merged_mort, Year == latest_2021)
+merged_incd_2021 <- subset(merged_incd, Year == latest_2021)
+
+
+merged_death_europe <- subset(merged_death_2021, Region == 'Europe')
+merged_mort_europe <- subset(merged_mort_2021, Region == 'Europe')
+merged_incd_europe <- subset(merged_incd_2021, Region == 'Europe')
+
+# Merging the death and mortality data for the Americas
+merged_data_europe <- merge(merged_death_europe, merged_mort_europe, by=c('Country', 'Year', 'Region'))
+
+# Creating a ggplot for the WP region
+p_europe <- ggplot(merged_data_europe, aes(x=Est_Death, y=Est_Mort, size=Est_Death, color=Region)) +
+    geom_point(alpha=0.7) +
+    geom_text(aes(label=Country, color = "black"), check_overlap = TRUE, size = 1) +
+    scale_size(range=c(1, 10)) +
+    scale_color_manual(values=c("Africa" = "red", "Americas" = "skyblue", "Europe" = "purple", "South-East Asia" = "orange", "Eastern Mediterranean" = "green", "Western Pacific" = "yellow")) +
+    labs(title='Europe Estimates (2021)',
+         x='Estimated Deaths in 2021',
+         y='Average Estimated Mortality Rate',
+         color='Region') +
+    theme_classic() +
+    theme(legend.position='right')
+
+# Converting to an interactive plotly plot
+ggplotly(p_europe, tooltip = "text")
+```
+
+
+
+## Dashboard
+
+```{r dashboard}
+# UI layout using shinydashboard
+ui <- dashboardPage(
+    dashboardHeader(title = "Malaria Data Visualization Dashboard"),
+    dashboardSidebar(
+        sidebarMenu(
+            menuItem("Dashboard", tabName = "dashboard", icon = icon("dashboard")),
+            menuItem("Help", icon = icon("question-circle"))
+        )
+    ),
+    dashboardBody(
+        tabItems(
+            tabItem(tabName = "dashboard",
+                    fluidRow(
+                        box(plotlyOutput("plot1", height = "450px")),
+                        box(plotlyOutput("plot2", height = "450px"))
+                    )
+            )
+        )
+    )
+)
+
+# Server logic
+server <- function(input, output) {
+    # Load and preprocess your data here
+
+    # Plot 1: Americas
+    output$plot1 <- renderPlotly({
+
+# year 2000
+latest_2000 <- 2000
+merged_death_2000 <- subset(merged_death, Year == latest_2000)
+merged_mort_2000 <- subset(merged_mort, Year == latest_2000)
+merged_incd_2000 <- subset(merged_incd, Year == latest_2000)
+
+
+merged_death_wp <- subset(merged_death_2000, Region == 'Western Pacific')
+merged_mort_wp <- subset(merged_mort_2000, Region == 'Western Pacific')
+merged_incd_wp <- subset(merged_incd_2000, Region == 'Western Pacific')
+
+# Merging the death and mortality data for the WPs
+merged_data_wp <- merge(merged_death_wp, merged_mort_wp, by=c('Country', 'Year', 'Region'))
+
+# Creating a ggplot for the WP region
+p_wp <- ggplot(merged_data_wp, aes(x=Est_Death, y=Est_Mort, size=Est_Death, color=Region, text=Country)) +
+    geom_point(alpha=0.7) +
+    geom_text(aes(label=Country, color = "black"), check_overlap = TRUE, size = 1) +
+    scale_size(range=c(1, 10)) +
+  scale_color_manual(values=c("Africa" = "red", "Americas" = "skyblue", "Europe" = "red", "South-East Asia" = "orange", "Eastern Mediterranean" = "green", "Western Pacific" = "yellow")) +
+    labs(title='West_Pacific Estimates (2000)',
+         x='Estimated Deaths in 2000',
+         y='Average Estimated Mortality Rate',
+         color='Region') +
+    theme_classic() +
+    theme(legend.position='right') 
+
+# Converting to an interactive plotly plot
+ggplotly(p_wp, tooltip = "text")
+})
+
+    # Plot 2: Africa Bubble Plot
+    output$plot2 <- renderPlotly({
+        
+## 2021
+latest_2021 <- 2021
+merged_death_2021 <- subset(merged_death, Year == latest_2021)
+merged_mort_2021 <- subset(merged_mort, Year == latest_2021)
+merged_incd_2021 <- subset(merged_incd, Year == latest_2021)
+
+
+merged_death_wp <- subset(merged_death_2021, Region == 'Western Pacific')
+merged_mort_wp <- subset(merged_mort_2021, Region == 'Western Pacific')
+merged_incd_wp <- subset(merged_incd_2021, Region == 'Western Pacific')
+
+# Merging the death and mortality data for the Americas
+merged_data_wp <- merge(merged_death_wp, merged_mort_wp, by=c('Country', 'Year', 'Region'))
+
+# Creating a ggplot for the WP region
+p_wp <- ggplot(merged_data_wp, aes(x=Est_Death, y=Est_Mort, size=Est_Death, color=Region)) +
+    geom_point(alpha=0.7) +
+    geom_text(aes(label=Country, color = "black"), check_overlap = TRUE, size = 1) +
+    scale_size(range=c(1, 10)) +
+    scale_color_manual(values=c("Africa" = "red", "Americas" = "skyblue", "Europe" = "red", "South-East Asia" = "orange", "Eastern Mediterranean" = "green", "Western Pacific" = "yellow")) +
+    labs(title='West_Pacific Estimates (2021)',
+         x='Estimated Deaths in 2021',
+         y='Average Estimated Mortality Rate',
+         color='Region') +
+    theme_classic() +
+    theme(legend.position='right')
+
+# Converting to an interactive plotly plot
+ggplotly(p_wp, tooltip = "text")
+    })
+}
+
+# Run the application
+shinyApp(ui = ui, server = server)
+```
+

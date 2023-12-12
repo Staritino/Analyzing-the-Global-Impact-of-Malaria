@@ -4,3 +4,4 @@ Malaria continues to be a significant global health challenge, affecting million
 
 Dataset from:
 https://apps.who.int/gho/data/node.main.MALARIA?lang=en
+

@@ -1,0 +1,221 @@
+---
+title: "Prediction"
+output: html_document
+date: "2023-12-09"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(sf)
+library(rnaturalearth)
+library(plotly)
+library(shiny)
+library(shinydashboard)
+library(cowplot)
+library(treemap)
+library(readr)
+library(stringr)
+library(forecast)
+library(caTools)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(ISLR2)
+library(tree)
+library(ggplot2) 
+library(GGally) 
+  
+```
+
+## Prediction
+
+Predict malaria deaths based on number of cases, incidence, and year.
+
+## Importing cleaned up datasets
+
+```{r import}
+world_countries_by_region = read.csv("world_countries.csv", sep = ",", header = TRUE) #world_countries_by_region
+est_cases_long = read.csv("est_cases_long.csv", sep = ",", header = TRUE)
+conf_cases_long = read.csv("conf_cases_long.csv", sep = ",", header = TRUE) 
+pres_cases_long = read.csv("pres_cases_long.csv", sep = ",", header = TRUE)
+tot_cases_long = read.csv("tot_cases_long.csv", sep = ",", header = TRUE)
+est_incd_long = read.csv("est_incd_long.csv", sep = ",", header = TRUE) 
+imported_cases_long = read.csv("imported_cases_long.csv", sep = ",", header = TRUE)
+ing_cases_long = read.csv("ing_cases_long.csv", sep = ",", header = TRUE)
+
+est_death_long = read.csv("est_death_long.csv", sep = ",", header = TRUE) 
+est_mort_long = read.csv("est_mort_long.csv", sep = ",", header = TRUE) 
+
+#Global dataset import
+global_est_cases_long = read.csv("global_est_cases_long.csv", sep = ",", header = TRUE)
+global_conf_cases_long = read.csv("global_conf_cases_long.csv", sep = ",", header = TRUE)
+global_est_death_long = read.csv("global_est_death_long.csv", sep = ",", header = TRUE)
+global_est_mort_long = read.csv("global_est_mort_long.csv", sep = ",", header = TRUE)
+
+```
+
+## Import merged dataset - merged dataset is by country
+
+```{r merged}
+merged_death = read.csv("merged_death.csv", sep = ",", header = TRUE)
+merged_mort = read.csv("merged_mort.csv", sep = ",", header = TRUE)
+#$Est_Mort <- as.numeric(merged_mort$Est_Mort)
+merged_est = read.csv("merged_est.csv", sep = ",", header = TRUE) 
+merged_tot = read.csv("merged_tot.csv", sep = ",", header = TRUE)
+merged_imp = read.csv("merged_imp.csv", sep = ",", header = TRUE)
+merged_ing = read.csv("merged_ing.csv", sep = ",", header = TRUE)
+merged_incd = read.csv("merged_incd.csv", sep = ",", header = TRUE)
+
+merged_deathh <- select(merged_death, -Cases, -Range)
+merged_incdd <- select(merged_incd, -Cases, -Range)
+merged_estt <- select(merged_est, -Cases, -Range)
+
+
+merged_data <- merge(merged_deathh, merged_incdd, by=c("Year","Country","Region"))
+merged_data <- merge(merged_data, merged_estt,  by=c("Year","Country","Region"))
+attach(merged_data)
+
+merged_use = select(merged_data, -Country, - Region)
+
+summary(merged_data)
+summary(merged_use)
+
+#plot(merged_data$Est_Cases, merged_data$Est_Death) 
+plot(merged_use)
+#ggpairs(merged_use)
+ 
+```
+
+
+## Linear Model
+```{r}
+model <- lm(Est_Death ~., data=merged_use)
+summary(model)
+
+########
+#model1 <- lm(Est_Death ~ Est_Cases, data=train_data)
+#predictions <- predict(model, test_data)
+
+#rmse <- sqrt(mean((predictions - test_data$Est_Death)^2))
+#mae <- mean(abs(predictions - test_data$Est_Death))
+
+#summary(model)
+```
+
+```{r}
+par(mfrow=c(2,2))
+plot(model)
+
+```
+
+
+## Decision Trees
+
+```{r}
+cleaned_data <- na.omit(merged_use)
+#For reproducibility
+#set.seed(123)
+#split data
+split <- sample.split(cleaned_data$Est_Death, SplitRatio = 0.7)
+train_data1 <- subset(cleaned_data, split)
+test_data1 <- subset(cleaned_data, !split)
+
+tree_model <- rpart(Est_Death ~ ., data = train_data1, method = "anova")
+summary(tree_model)
+
+# Make predictions
+tree_predictions <- predict(tree_model, test_data1)
+
+tree_rmse <- sqrt(mean((tree_predictions - test_data1$Est_Death)^2))
+
+#decision pathway tree plot
+rpart.plot(tree_model)
+r_squared <- 1 - (sum((tree_predictions- test_data1$Est_Death)^2) / sum((mean(train_data1$Est_Death) - test_data1$Est_Death)^2))
+
+plot(test_data1$Est_Death, tree_predictions)
+abline(a=0, b=1)
+
+#sum(is.na(test_data1$Est_Death))
+#sum(is.na(tree_predictions))
+r_squared
+
+```
+
+#Fitting Classification Trees
+```{r}
+summary(cleaned_data)
+Est_Deathc <- factor(ifelse(cleaned_data$Est_Death <= 6521, "Less", "More"))
+cleaned_datac <- data.frame(cleaned_data, Est_Deathc)
+
+tree_modelc <- tree(Est_Deathc ~ .-Est_Death , data = cleaned_datac)
+summary(tree_modelc)
+
+```
+
+```{r}
+plot(tree_modelc)
+text(tree_modelc, pretty = 0, cex = 1)
+
+```
+
+#Fitting Regression Trees
+```{r}
+tree_modelr <- tree(Est_Death ~ ., data = train_data1)
+summary(tree_modelr)
+
+```
+
+```{r}
+plot(tree_modelr)
+text(tree_modelr, pretty = 0, cex = 1)
+
+```
+
+### Random Forest
+```{r}
+# Fit the Random Forest model
+rf_model <- randomForest(Est_Death ~ ., data = train_data1); rf_model 
+
+# Make predictions
+rf_predictions <- predict(rf_model, test_data1)
+
+# Evaluate the model
+rf_rmse <- sqrt(mean((rf_predictions - test_data1$Est_Death)^2))
+
+
+#Find out how to tune random forest and decision tree
+# Tuning Random Forest model
+#tuning_results <- tuneRF(train_data1[,-which(names(train_data1) == "Est_Death")], 
+                        # train_data1$Est_Death, 
+                         #stepFactor=1.5, 
+                         #improve=0.01, 
+                         #ntreeTry=500)
+
+importance(rf_model)
+varImpPlot(rf_model)
+
+
+
+# Calculate R-squared on the test data
+ss_total <- sum((test_data1$Est_Death - mean(test_data1$Est_Death))^2)
+ss_residual <- sum((rf_predictions - test_data1$Est_Death)^2)
+rf_test_r_squared <- 1 - (ss_residual / ss_total)
+
+# Print the R-squared on the test data
+print(rf_test_r_squared)
+```
+
+```{r}
+rf_model1 <- randomForest(Est_Death ~ ., data = train_data1, ntree=20); rf_model1 
+rf_model2 <- randomForest(Est_Death ~ ., data = train_data1, ntree=40); rf_model2 
+rf_model3 <- randomForest(Est_Death ~ ., data = train_data1, ntree=60); rf_model3 
+rf_model4 <- randomForest(Est_Death ~ ., data = train_data1, ntree=80); rf_model4 
+rf_model5 <- randomForest(Est_Death ~ ., data = train_data1, ntree=100); rf_model5 
+
+```
+
+
